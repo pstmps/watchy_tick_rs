@@ -1,5 +1,6 @@
 use dotenv::dotenv;
 use std::env;
+use color_eyre::Report;
 
 pub mod aggs;
 pub mod app;
@@ -12,51 +13,63 @@ pub mod message;
 pub mod filter;
 pub mod add_to_index;
 
-use crate::app::App;
+use crate::app::{App, AppTimeouts, AppBuffers};
 use crate::init_logging::initialize_logging;
 
-async fn tokio_main() -> Result<(), Box<dyn std::error::Error>> {
+async fn tokio_main() -> Result<(), Report> {
     dotenv().ok();
 
-    let log_path = env::var("CONDENSE_LOG_PATH").unwrap_or_else(|_| "log".to_string());
+    let log_path = env::var("TICK_LOG_PATH").unwrap_or_else(|_| "log".to_string());
 
-    let log_to_console = env::var("CONDENSE_LOG_CONSOLE")
+    let log_to_console = env::var("TICK_LOG_CONSOLE")
         .unwrap_or_else(|_| "true".to_string())
         .parse::<bool>()?;
 
     initialize_logging(&log_path, log_to_console)?;
 
     let index =
-        env::var("CONDENSE_INDEX").unwrap_or_else(|_| ".ds-logs-fim.event-default*".to_string());
+        env::var("TICK_INDEX").unwrap_or_else(|_| ".ds-logs-fim.event-default*".to_string());
 
-    let new_index = env::var("CONDENSE_NEW_INDEX")
+    let new_index = env::var("TICK_NEW_INDEX")
         .unwrap_or_else(|_| "fs_state_temp_debug".to_string());
 
     log::info!("Index: {}", &new_index);
 
-    let action_buffer_size = env::var("CONDENSE_ACTION_BUFFER_SIZE")
+    let action_buffer_size = env::var("TICK_ACTION_BUFFER_SIZE")
         .unwrap_or_else(|_| "1024".to_string())
         .parse::<usize>()?;
 
-    let page_size = env::var("CONDENSE_PAGE_SIZE")
+    let page_size = env::var("TICK_PAGE_SIZE")
         .unwrap_or_else(|_| "24".to_string())
         .parse::<usize>()?;
 
-    let buffer_size = env::var("CONDENSE_DELETE_BUFFER")
+    let buffer_size = env::var("TICK_INDEXING_BUFFER")
         .unwrap_or_else(|_| "100".to_string())
         .parse::<usize>()?;
 
-    let del_timeout = env::var("CONDENSE_DELETE_TIMEOUT")
+    let _buffers = AppBuffers {
+        action_buffer_size,
+        buffer_size,
+        page_size,
+    };
+
+    let index_timeout = env::var("TICK_INDEXING_TIMEOUT")
         .unwrap_or_else(|_| "5".to_string())
         .parse::<u64>()?;
 
-    let agg_sleep = env::var("CONDENSE_AGGREGATION_SLEEP")
+    let agg_sleep = env::var("TICK_AGGREGATION_SLEEP")
         .unwrap_or_else(|_| "20".to_string())
         .parse::<u64>()?;
 
-    let run_as_daemon = env::var("CONDENSE_DAEMON")
+    let run_as_daemon = env::var("TICK_DAEMON")
         .unwrap_or_else(|_| "false".to_string())
         .parse::<bool>()?;
+
+    let _timeouts = AppTimeouts {
+        index_timeout,
+        agg_sleep,
+        run_as_daemon,
+    };
 
     let es_ip = env::var("ES_IP").ok();
     let es_port = env::var("ES_PORT").ok();
@@ -98,14 +111,12 @@ async fn tokio_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut app = App::new(
         es_host,
-        action_buffer_size,
+        // action_buffer_size,
         &index,
         &new_index,
-        page_size,
-        buffer_size,
-        del_timeout,
-        agg_sleep,
-        run_as_daemon,
+        // page_size,
+        _buffers,
+        _timeouts,
     )?;
     app.run().await?;
 
@@ -113,7 +124,7 @@ async fn tokio_main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Report> {
     if let Err(e) = tokio_main().await {
         eprintln!("{} error: Something went wrong", env!("CARGO_PKG_NAME"));
         Err(e)

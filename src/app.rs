@@ -1,5 +1,6 @@
-use std::f64::consts::E;
 
+//use color_eyre::eyre::Ok;
+use color_eyre::Report;
 use serde_json::Value;
 // use std::sync::{Arc, Mutex};
 // use std::sync::Arc;
@@ -7,6 +8,7 @@ use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 // use std::time::Duration;
 // use std::cell::RefCell;
 
@@ -25,49 +27,81 @@ use crate::add_to_index::add_to_index;
 
 pub struct App {
     pub es_host: Host,
-    pub should_quit: bool,
-    pub should_suspend: bool,
-    pub action_buffer_size: usize,
+    // pub should_quit: bool,
+    // pub should_suspend: bool,
+    // pub action_buffer_size: usize,
     pub index: String,
     pub new_index: String,
-    pub page_size: usize,
-    pub buffer_size: usize,
+    // pub page_size: usize,
+    // pub buffer_size: usize,
+    pub buffers: AppBuffers,
+    pub timeouts: AppTimeouts,
+//     pub index_timeout: u64,
+//     pub agg_sleep: u64,
+//     pub run_as_daemon: bool,
+}
+
+pub struct AppTimeouts {
     pub index_timeout: u64,
     pub agg_sleep: u64,
     pub run_as_daemon: bool,
 }
 
+pub struct AppBuffers {
+    pub action_buffer_size: usize,
+    pub buffer_size: usize,
+    pub page_size: usize,
+}
+
+
+
 impl App {
     pub fn new(
         es_host: Host,
-        action_buffer_size: usize,
+        // action_buffer_size: usize,
         index: &str,
         new_index: &str,
-        page_size: usize,
-        buffer_size: usize,
-        index_timeout: u64,
-        agg_sleep: u64,
-        run_as_daemon: bool,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+        // page_size: usize,
+        // buffer_size: usize,
+        buffers: AppBuffers,
+        timeouts: AppTimeouts,
+        // index_timeout: u64,
+        // agg_sleep: u64,
+        // run_as_daemon: bool,
+    ) -> Result<Self, Report> {
         Ok(Self {
             es_host,
-            should_quit: false,
-            should_suspend: false,
-            action_buffer_size,
+            // should_quit: false,
+            // should_suspend: false,
+            // action_buffer_size,
             index: index.to_string(),
             new_index: new_index.to_string(),
-            page_size,
-            buffer_size,
-            index_timeout,
-            agg_sleep,
-            run_as_daemon,
+            // page_size,
+            // buffer_size,
+            buffers,
+            timeouts,
+            // index_timeout,
+            // agg_sleep,
+            // run_as_daemon,
         })
     }
 
-    pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let (event_tx, mut event_rx) = mpsc::channel(self.action_buffer_size);
+    pub async fn run(&mut self) -> Result<(), Report> {
+
+        let page_size = self.buffers.page_size;
+        let buffer_size = self.buffers.buffer_size;
+        let action_buffer_size = self.buffers.action_buffer_size;
+
+        let index_timeout = self.timeouts.index_timeout;
+        let agg_sleep = self.timeouts.agg_sleep;
+        let run_as_daemon = self.timeouts.run_as_daemon;
+
+        let global_timeout = (index_timeout + agg_sleep) * 2;
+
+
+        let (event_tx, mut event_rx) = mpsc::channel(action_buffer_size);
     //     // let (delete_tx, delete_rx) = mpsc::channel(self.action_buffer_size);
-        let (index_tx, index_rx) = broadcast::channel(self.action_buffer_size);
+        let (index_tx, _index_rx_) = broadcast::channel(action_buffer_size);
     //     log::info!(
     //         "Starting condensing app on index: {} with buffer size: {}",
     //         self.index,
@@ -76,13 +110,14 @@ impl App {
 
         //let index = self.index.clone();
         // let new_index = self.new_index.clone();
-        let page_size = self.page_size;
-        let buffer_size = self.buffer_size;
-        let index_timeout = self.index_timeout;
-        let agg_sleep = self.agg_sleep;
+        // let page_size = self.page_size;
+        // let buffer_size = self.buffer_size;
+        // let index_timeout = self.index_timeout;
+        // let agg_sleep = self.agg_sleep;
 
-        let restart = self.run_as_daemon;
+        // let restart = self.run_as_daemon;
 
+        
         let mut handles = Vec::new();
         //let _index = index.to_string();
 
@@ -123,7 +158,7 @@ impl App {
                         .await
                         {
                             Ok(_) => {
-                                if restart{
+                                if run_as_daemon{
                                 log::info!("get_aggs_entries_from_index completed successfully, restarting task");
                                 // Optionally, you can add a delay before restarting
                                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -156,6 +191,8 @@ impl App {
                 let mut _index_rx = index_tx.subscribe();
                 let _new_index = self.new_index.clone();
                 let _es_host = self.es_host.clone();
+                //let _restart = self.run_as_daemon;
+                
 
                 index_handle = Some(tokio::spawn(async move {
                     if let Err(e) = add_to_index(
@@ -172,25 +209,52 @@ impl App {
                 }));
             }
 
-             if let Some(event) = event_rx.recv().await {
-            //     println!("Event received: {:?}", event);
-            //  }
-                let _es_host = self.es_host.clone();
-                let _index = self.index.clone();
-                if let Err(e) = self
-                    .process_events(
-                        _es_host,
-                        event,
-                        &event_tx,
-                        &index_tx,
-                        &mut handles,
-                        _index.as_str(),
-                    )
-                    .await
-                {
-                    log::error!("Failed to process events: {}", e);
-                };
+            // if let Some(event) = event_rx.recv().await {
+            // //     println!("Event received: {:?}", event);
+            // //  }
+            //     let _es_host = self.es_host.clone();
+            //     let _index = self.index.clone();
+            //     if let Err(e) = self
+            //         .process_events(
+            //             event,
+            //             &event_tx,
+            //             &index_tx,
+            //             &mut handles,
+            //             _index.as_str(),
+            //         )
+            //         .await
+            //     {
+            //         log::error!("Failed to process events: {}", e);
+            //     };
+            // }
+
+            tokio::select! {
+
+                Some(event) = event_rx.recv() => {
+                    let _es_host = self.es_host.clone();
+                    let _index = self.index.clone();
+                    if let Err(e) = self
+                        .process_events(
+                            event,
+                            &event_tx,
+                            &index_tx,
+                            &mut handles,
+                            _index.as_str(),
+                        )
+                        .await
+                    {
+                        log::error!("Failed to process events: {}", e);
+                    };
+                }
+
+                _ = sleep(tokio::time::Duration::from_secs(global_timeout)) => {
+                    log::info!("No events received in the last {} seconds, quitting ... ", global_timeout);
+                    std::process::exit(0);
+                    
+                 }
+
             }
+            
             // if self.should_quit {
             //     return Ok(());
             // }
@@ -198,17 +262,18 @@ impl App {
             //     return Ok(());
             // }
         }
+       
     }
 
     async fn process_events(
         &mut self,
-        es_host: Host,
+       // es_host: Host,
         event: Message,
         event_tx: &mpsc::Sender<Message>,
         index_tx: &broadcast::Sender<Value>,
         handles: &mut Vec<JoinHandle<()>>,
         index: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Report> {
         let _event_tx = event_tx.clone();
         match event {
             Message::Aggregate {
@@ -248,14 +313,9 @@ impl App {
                     "Other event",
   
                 );
-                // let _delete_tx = delete_tx.clone();
-                // let deltx_handle = tokio::spawn(async move {
-                //     log::debug!("Sending delete payload: {:?}", payload);
-                //     let _ = _delete_tx.send(payload);
-                // });
-                // handles.push(deltx_handle);
+
             }
-         }
-         Ok(())
+        }
+        Ok(())
     }
 }

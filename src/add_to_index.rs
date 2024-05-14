@@ -1,8 +1,8 @@
 // use serde::Serialize;
-use elasticsearch::DeleteByQueryParts;
+use elasticsearch::BulkParts;
 use serde_json::json;
 use serde_json::Value;
-use std::collections::HashSet;
+//use std::collections::HashSet;
 use tokio::sync::broadcast;
 // use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
@@ -22,7 +22,7 @@ pub async fn add_to_index(
 
     let mut body: Vec<Value> = Vec::new();
 
-    log::info!("add_to_index Add records to index: {}", index);
+    log::info!("############### add_to_index Add records to index: {}", index);
     loop {
         tokio::select! {
             // Wait for a new record or timeout
@@ -48,24 +48,47 @@ pub async fn add_to_index(
             // Timeout after 5 seconds
             _ = sleep(Duration::from_secs(timeout)) => {
                 log::info!("Timeout reached");
-                // if !file_paths.is_empty() || !records.is_empty() {
 
-                //     log::info!("Deleting records after timeout reached: {:?}", file_paths);
+                if !body.is_empty() {
+                    log::info!("Adding records after timeout reached: {:?}", body);
 
-                //     flush_records(&mut file_paths, &mut records, &es_host, index).await?;
-                // }
+                    add_records(es_host.clone(), index, body.clone()).await?;
+                    body.clear();
+                }
             }
         }
 
-        // if file_paths.len() > buffer_size {
-        //     log::debug!(
-        //         "Adding records after buffer size reached: {:?}",
-        //         file_paths
-        //     );
-        //     flush_records(&mut file_paths, &mut records, &es_host, index).await?;
-        // }
+        if body.len() > buffer_size {
+            log::debug!("Adding records after buffer size reached: {:?}", body);
+            add_records(es_host.clone(), index, body.clone()).await?;
+            body.clear();
+
+        }
+
     }
-    Ok(())
+    
+}
+
+async fn add_records(
+    es_host: Host,
+    index: &str,
+    body: Vec<Value>,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let client = create_client(es_host.clone())?;
+
+    let body_str: Vec<String> = body.into_iter().map(|v| v.to_string()).collect();
+
+    let response = client
+        .bulk(BulkParts::Index(index))
+        .body(body_str)
+        .send()
+        .await?;
+
+    let json_response = response.json::<Value>().await?;
+
+    log::debug!("Response from ES: {:?}", json_response);
+
+    Ok(json_response)
 }
 
 // async fn flush_records(

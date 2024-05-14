@@ -16,6 +16,8 @@ pub async fn get_aggs_entries_from_index(
     agg_sleep: u64,
     tx: mpsc::Sender<Message>,
 ) -> Result<(), color_eyre::Report> {
+
+    log::info!("################################# Aggs task starting");
     // loop {
         let client = create_client(es_host.clone())?;
 
@@ -23,7 +25,7 @@ pub async fn get_aggs_entries_from_index(
 
         let mut hits = 1;
 
-        let timestamp = chrono::Utc::now();
+        let timestamp = chrono::Local::now();
         let timestamp_millis = timestamp.timestamp_millis() as f64;
 
         while hits > 0 {

@@ -165,12 +165,12 @@ pub fn initialize_logging(in_directory: &str, log_to_console: bool) -> Result<()
             .with_ansi(true)
             .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
 
-        let _registry = tracing_subscriber::registry()
+        tracing_subscriber::registry()
         .with(file_subscriber)
         .with(console_subscriber)
         .with(ErrorLayer::default()).init();
     } else {
-        let _registry = tracing_subscriber::registry()
+        tracing_subscriber::registry()
             .with(file_subscriber)
             .with(ErrorLayer::default()).init();
     };

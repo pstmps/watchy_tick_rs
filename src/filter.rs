@@ -1,10 +1,6 @@
-// use elasticsearch::SearchParts;
 use serde_json::Value;
 use tokio::sync::mpsc;
-// use tokio::time::{sleep, Duration};
 
-// use crate::elastic::create_client;
-// use crate::elastic::Host;
 use crate::message::Message;
 
 pub async fn filter_record(
@@ -22,7 +18,7 @@ pub async fn filter_record(
 
     if file_sizes > 0 {
         log::debug!("File size is greater than 0, sending to aggregator");
-        let message = Message::Add { event_type: "Add".to_string() , payload: payload };
+        let message = Message::Add { event_type: "Add".to_string() , payload };
         tx.send(message).await?;
     } else {
         log::debug!("File size is 0, skipping record");
