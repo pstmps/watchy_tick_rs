@@ -4,12 +4,9 @@ use color_eyre::Report;
 
 pub mod aggs;
 pub mod app;
-// pub mod delete_records;
 pub mod elastic;
 pub mod init_logging;
-// pub mod latest;
 pub mod message;
-// pub mod parse_record;
 pub mod filter;
 pub mod add_to_index;
 
@@ -33,7 +30,7 @@ async fn tokio_main() -> Result<(), Report> {
     let new_index = env::var("TICK_NEW_INDEX")
         .unwrap_or_else(|_| "fs_state_temp_debug".to_string());
 
-    log::info!("Index: {}", &new_index);
+    log::info!("[+] Writing to index: {}", &new_index);
 
     let action_buffer_size = env::var("TICK_ACTION_BUFFER_SIZE")
         .unwrap_or_else(|_| "1024".to_string())
@@ -86,35 +83,16 @@ async fn tokio_main() -> Result<(), Report> {
         host_port: es_port.map(|p| p.parse::<u16>().unwrap()),
         host_scheme: Some("https".to_string()),
         cert_path,
-        // verify_certs: Some(false),
-        // ca_certs: None,
-        // ssl_show_warn: Some(true),
     };
 
     let es_host = elastic::Host::new(config);
-
-    // let client = elastic::create_client(es_host)?;
-
-    // let response = client
-    // .cat()
-    // .health()
-    // .format("json")
-    // .send()
-    // .await
-    // .expect("Failed to send health check request");
-
-    // println!("{:?}", response); 
-
-
 
     // TODO initialize_panic_handler()?;
 
     let mut app = App::new(
         es_host,
-        // action_buffer_size,
         &index,
         &new_index,
-        // page_size,
         _buffers,
         _timeouts,
     )?;

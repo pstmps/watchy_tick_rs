@@ -7,8 +7,6 @@ use crate::elastic::create_client;
 use crate::elastic::Host;
 use crate::message::Message;
 
-// TODO use json! macro to create the query
-
 pub async fn get_aggs_entries_from_index(
     es_host: Host,
     index: &str,
@@ -17,103 +15,85 @@ pub async fn get_aggs_entries_from_index(
     tx: mpsc::Sender<Message>,
 ) -> Result<(), color_eyre::Report> {
 
-    log::info!("################################# Aggs task starting");
+    log::info!("Getting aggregated Records from Index");
     // loop {
-        let client = create_client(es_host.clone())?;
+    let client = create_client(es_host.clone())?;
 
-        let mut after = String::new();
+    let mut after = String::new();
 
-        let mut hits = 1;
+    let mut hits = 1;
 
-        let timestamp = chrono::Local::now();
-        let timestamp_millis = timestamp.timestamp_millis() as f64;
+    let timestamp = chrono::Local::now();
+    let timestamp_millis = timestamp.timestamp_millis() as f64;
 
-        while hits > 0 {
-            hits = 0;
+    while hits > 0 {
+        hits = 0;
 
-            let json_query = generate_query(page_size, &after)?;
+        let json_query = generate_query(page_size, &after)?;
 
-            let value: serde_json::Value = serde_json::from_str(&json_query)?;
+        let value: serde_json::Value = serde_json::from_str(&json_query)?;
 
-            let response = client
-                .search(SearchParts::Index(&[index]))
-                .body(value)
-                .send()
-                .await?;
+        let response = client
+            .search(SearchParts::Index(&[index]))
+            .body(value)
+            .send()
+            .await?;
 
-            log::debug!("Response from ES: {:?}", response);
+        log::debug!("Response from ES: {:?}", response);
 
-            let response_body = match response.json::<Value>().await {
-                Ok(body) => body,
-                Err(_) => continue,
+        let response_body = match response.json::<Value>().await {
+            Ok(body) => body,
+            Err(_) => continue,
+        };
+
+        log::debug!("Response body: {:?}", response_body);
+
+        let aggs =
+            match response_body["aggregations"]["unique_event_types"]["buckets"].as_array() {
+                Some(aggs) => aggs,
+                None => continue,
             };
 
-            log::debug!("Response body: {:?}", response_body);
+        for agg in aggs {
+            let mut agg_clone = agg.clone();
 
-            let aggs =
-                match response_body["aggregations"]["unique_event_types"]["buckets"].as_array() {
-                    Some(aggs) => aggs,
-                    None => continue,
+            agg_clone["timestamp"] = json!({
+                "value": timestamp_millis,
+                "value_as_string": timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            });
+
+            let _tx = tx.clone();
+            tokio::spawn(async move {
+                let message = Message::Aggregate {
+                    event_type: "Aggregate".to_string(),
+                    payload: agg_clone,
                 };
 
-            for agg in aggs {
-                // let doc_count = agg["doc_count"].as_u64().unwrap();
-                let doc_count = match agg["doc_count"].as_u64() {
-                    Some(value) => value,
-                    None => {
-                        log::warn!("doc_count is not a u64 or does not exist");
-                        0
-                    }
-                };
+                log::debug!("Sending message: {:?}", &message);
 
-                if doc_count > 1 {
-                    let mut agg_clone = agg.clone();
+                if let Err(e) = _tx.send(message).await {
+                    log::error!("Failed to send message: {}", e);
+                }
+            });
 
-                    agg_clone["timestamp"] = json!({
-                        "value": timestamp_millis,
-                        "value_as_string": timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-                    });
-
-                    let _tx = tx.clone();
-                    tokio::spawn(async move {
-                        let message = Message::Aggregate {
-                            event_type: "Aggregate".to_string(),
-                            payload: agg_clone,
-                        };
-
-                        log::debug!("Sending message: {:?}", &message);
-
-                        // _tx.send(message).await.unwrap();
-                        if let Err(e) = _tx.send(message).await {
-                            log::error!("Failed to send message: {}", e);
-                        }
-                    });
-                } // if doc_count > 1
-                hits += 1;
-            }
-
-            if hits == 0 {
-                break;
-            }
-
-            after = response_body["aggregations"]["unique_event_types"]["after_key"]["file.parent_path"]
-                .clone()
-                .to_string();
-
-            // after = match response_body["aggregations"]["unique_event_types"]["after_key"]["file.parent_path"].as_str() {
-            //         Some(value) => value,
-            //         None => {
-            //             log::warn!("after_key is not a string or does not exist");
-            //             continue,
-            //         },
-            //     };
+            hits += 1;
         }
 
-        log::info!("Aggs task sleeping for {} seconds", agg_sleep);
-        //sleep for $agg_sleep seconds
-        sleep(Duration::from_secs(agg_sleep)).await;
-        Ok(())
-    // }
+        if hits == 0 {
+            break;
+        }
+
+        after = response_body["aggregations"]["unique_event_types"]["after_key"]["file.parent_path"]
+            .clone()
+            .to_string();
+
+    }
+
+    log::info!("Aggs task sleeping for {} seconds", agg_sleep);
+    //sleep for $agg_sleep seconds
+    sleep(Duration::from_secs(agg_sleep)).await;
+    Ok(())
+
 }
 
 fn generate_query(page_size: usize, after: &str) -> Result<String, color_eyre::Report> {

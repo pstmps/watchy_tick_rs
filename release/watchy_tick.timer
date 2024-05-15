@@ -1,0 +1,11 @@
+[Unit]
+Description=Runs watchy_tick.service every day at a set time
+
+[Timer]
+OnCalendar=*-*-* 13:15:00
+OnBootSec=60min
+Persistent=true
+Unit=watchy_tick.service
+
+[Install]
+WantedBy=timers.target

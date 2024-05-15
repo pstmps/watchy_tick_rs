@@ -1,10 +1,7 @@
-// use serde::Serialize;
 use elasticsearch::BulkParts;
 use serde_json::json;
 use serde_json::Value;
-//use std::collections::HashSet;
 use tokio::sync::broadcast;
-// use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 
 use crate::elastic::create_client;
@@ -17,12 +14,10 @@ pub async fn add_to_index(
     timeout: u64,
     mut index_rx: broadcast::Receiver<Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // let mut file_paths = HashSet::new();
-    // let mut records = HashSet::new();
 
     let mut body: Vec<Value> = Vec::new();
 
-    log::info!("############### add_to_index Add records to index: {}", index);
+    log::info!("add_to_index Adding records to index: {}", index);
     loop {
         tokio::select! {
             // Wait for a new record or timeout
@@ -45,7 +40,7 @@ pub async fn add_to_index(
                 }
             }
 
-            // Timeout after 5 seconds
+            // Timeout after $timeout seconds
             _ = sleep(Duration::from_secs(timeout)) => {
                 log::info!("Timeout reached");
 
@@ -62,11 +57,8 @@ pub async fn add_to_index(
             log::debug!("Adding records after buffer size reached: {:?}", body);
             add_records(es_host.clone(), index, body.clone()).await?;
             body.clear();
-
         }
-
     }
-    
 }
 
 async fn add_records(
@@ -90,101 +82,3 @@ async fn add_records(
 
     Ok(json_response)
 }
-
-// async fn flush_records(
-//     file_paths: &mut HashSet<String>,
-//     records: &mut HashSet<(String, String)>,
-//     es_host: &Host,
-//     index: &str,
-// ) -> Result<(), Box<dyn std::error::Error>> {
-//     let query = generate_query(&*file_paths, &*records)?;
-//     log_debug_pretty("Query", &query);
-//     let response = delete_records(es_host.clone(), index, query).await?;
-//     log_debug_pretty("Response", &response);
-//     // clear the file paths and records
-//     file_paths.clear();
-//     records.clear();
-//     Ok(())
-// }
-
-// fn log_debug_pretty<T: serde::Serialize>(label: &str, value: &T) {
-//     if log::log_enabled!(log::Level::Debug) {
-//         if let Ok(value_string) = serde_json::to_string_pretty(value) {
-//             log::debug!("{}: {}", label, value_string);
-//         } else {
-//             log::error!("Failed to serialize {} to a pretty string", label);
-//         }
-//     }
-// }
-
-// fn generate_query(
-//     file_paths: &HashSet<String>,
-//     records: &HashSet<(String, String)>,
-// ) -> Result<Value, Box<dyn std::error::Error>> {
-//     let mut file_paths_query = vec![];
-//     let mut records_query = vec![];
-
-//     for file_path in file_paths {
-//         file_paths_query.push(json!({
-//             "term": {
-//                 "file.uri": file_path
-//             }
-//         }));
-
-//         file_paths_query.push(json!({
-//             "wildcard": {
-//                 "file.uri": {
-//                     "value": format!("{}/*", file_path)
-//                 }
-//             }
-//         }));
-//     }
-
-//     for (record_id, record_index) in records {
-//         records_query.push(json!({
-//             "bool": {
-//                 "must": [
-//                     {
-//                         "term": {
-//                             "_id": record_id
-//                         }
-//                     },
-//                     {
-//                         "term": {
-//                             "_index": record_index
-//                         }
-//                     }
-//                 ]
-//             }
-//         }));
-//     }
-
-//     let query = json!({
-//         "query": {
-//             "bool": {
-//                 "should": file_paths_query,
-//                 "must_not": records_query
-//             }
-//         }
-//     });
-
-//     Ok(query)
-// }
-
-// async fn delete_records(
-//     es_host: Host,
-//     index: &str,
-//     query: Value,
-// ) -> Result<Value, Box<dyn std::error::Error>> {
-//     let client = create_client(es_host.clone())?;
-
-//     let response = client
-//         .delete_by_query(DeleteByQueryParts::Index(&[index]))
-//         .body(query)
-//         .send()
-//         .await?;
-
-//     let json_response = response.json::<Value>().await?;
-
-//     Ok(json_response)
-// }

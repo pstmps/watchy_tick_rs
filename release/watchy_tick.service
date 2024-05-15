@@ -1,0 +1,8 @@
+[Unit]
+Description=Run the watchy_tick binary to aggregate filesystem state snapshot in new index
+
+[Service]
+Type=oneshot
+User=watchy
+EnvironmentFile=/opt/watchy_tick/.env
+ExecStart=/opt/watchy_tick/watchy_tick_rs

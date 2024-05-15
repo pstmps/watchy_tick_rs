@@ -1,44 +1,23 @@
-
-//use color_eyre::eyre::Ok;
 use color_eyre::Report;
 use serde_json::Value;
-// use std::sync::{Arc, Mutex};
-// use std::sync::Arc;
-// use std::sync::atomic::{AtomicBool, Ordering};
+
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-// use std::time::Duration;
-// use std::cell::RefCell;
-
-// // use futures_util::future::future::FutureExt;
-// use futures_util::FutureExt;
-// use futures_util::task::noop_waker;
 
 use crate::aggs::get_aggs_entries_from_index;
-// use crate::delete_records::delete_records_from_index;
 use crate::elastic::Host;
-// use crate::latest::get_last_event_for_record;
 use crate::message::Message;
-// use crate::parse_record::parse_record;
 use crate::filter::filter_record;
 use crate::add_to_index::add_to_index;
 
 pub struct App {
     pub es_host: Host,
-    // pub should_quit: bool,
-    // pub should_suspend: bool,
-    // pub action_buffer_size: usize,
     pub index: String,
     pub new_index: String,
-    // pub page_size: usize,
-    // pub buffer_size: usize,
     pub buffers: AppBuffers,
     pub timeouts: AppTimeouts,
-//     pub index_timeout: u64,
-//     pub agg_sleep: u64,
-//     pub run_as_daemon: bool,
 }
 
 pub struct AppTimeouts {
@@ -53,36 +32,20 @@ pub struct AppBuffers {
     pub page_size: usize,
 }
 
-
-
 impl App {
     pub fn new(
         es_host: Host,
-        // action_buffer_size: usize,
         index: &str,
         new_index: &str,
-        // page_size: usize,
-        // buffer_size: usize,
         buffers: AppBuffers,
         timeouts: AppTimeouts,
-        // index_timeout: u64,
-        // agg_sleep: u64,
-        // run_as_daemon: bool,
     ) -> Result<Self, Report> {
         Ok(Self {
             es_host,
-            // should_quit: false,
-            // should_suspend: false,
-            // action_buffer_size,
             index: index.to_string(),
             new_index: new_index.to_string(),
-            // page_size,
-            // buffer_size,
             buffers,
             timeouts,
-            // index_timeout,
-            // agg_sleep,
-            // run_as_daemon,
         })
     }
 
@@ -98,40 +61,18 @@ impl App {
 
         let global_timeout = (index_timeout + agg_sleep) * 2;
 
-
         let (event_tx, mut event_rx) = mpsc::channel(action_buffer_size);
-    //     // let (delete_tx, delete_rx) = mpsc::channel(self.action_buffer_size);
         let (index_tx, _index_rx_) = broadcast::channel(action_buffer_size);
-    //     log::info!(
-    //         "Starting condensing app on index: {} with buffer size: {}",
-    //         self.index,
-    //         self.action_buffer_size
-    //     );
 
-        //let index = self.index.clone();
-        // let new_index = self.new_index.clone();
-        // let page_size = self.page_size;
-        // let buffer_size = self.buffer_size;
-        // let index_timeout = self.index_timeout;
-        // let agg_sleep = self.agg_sleep;
-
-        // let restart = self.run_as_daemon;
-
-        
         let mut handles = Vec::new();
-        //let _index = index.to_string();
-
-    //     // -ARC bool is running-
-    //     // let is_running = Arc::new(AtomicBool::new(false));
 
         let mut agg_handle: Option<tokio::task::JoinHandle<()>> = None;
 
         let mut index_handle: Option<tokio::task::JoinHandle<()>> = None;
 
-    //     let mut del_handle: Option<tokio::task::JoinHandle<()>> = None;
-
         loop {
-            log::info!("Starting get aggs entries from index task: {}", self.index.as_str());
+            log::debug!("Starting get aggs entries from index task: {}", self.index.as_str());
+
             // check if aggregation task is runnning, if not, restart it
             if let Some(handle) = &agg_handle {
                 if handle.is_finished() {
@@ -159,25 +100,27 @@ impl App {
                         {
                             Ok(_) => {
                                 if run_as_daemon{
-                                log::info!("get_aggs_entries_from_index completed successfully, restarting task");
-                                // Optionally, you can add a delay before restarting
-                                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                                    // if run_as_daemon is true, restart the task after a delay
+                                    log::info!("get_aggs_entries_from_index completed, restarting task");
+                                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                                 } else {
+                                    // If the function succeeds, break the loop
                                     break;
                                 }
-                            }, // If the function succeeds, break the loop
+                            },
                             Err(e) => {
                                 log::error!(
                                     "Failed to start get aggs entries from index task: {}",
                                     e
                                 );
-                                // Optionally, you can add a delay before retrying
                                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                             }
                         };
                     }
                 }));
             }
+
+            //check if index task is running, if not, restart it
 
             if let Some(handle) = &index_handle {
                 if handle.is_finished() {
@@ -191,8 +134,6 @@ impl App {
                 let mut _index_rx = index_tx.subscribe();
                 let _new_index = self.new_index.clone();
                 let _es_host = self.es_host.clone();
-                //let _restart = self.run_as_daemon;
-                
 
                 index_handle = Some(tokio::spawn(async move {
                     if let Err(e) = add_to_index(
@@ -209,25 +150,7 @@ impl App {
                 }));
             }
 
-            // if let Some(event) = event_rx.recv().await {
-            // //     println!("Event received: {:?}", event);
-            // //  }
-            //     let _es_host = self.es_host.clone();
-            //     let _index = self.index.clone();
-            //     if let Err(e) = self
-            //         .process_events(
-            //             event,
-            //             &event_tx,
-            //             &index_tx,
-            //             &mut handles,
-            //             _index.as_str(),
-            //         )
-            //         .await
-            //     {
-            //         log::error!("Failed to process events: {}", e);
-            //     };
-            // }
-
+            // wait for events in the event channel, if none are received in the last global_timeout seconds, quit or restart the loop
             tokio::select! {
 
                 Some(event) = event_rx.recv() => {
@@ -248,13 +171,15 @@ impl App {
                 }
 
                 _ = sleep(tokio::time::Duration::from_secs(global_timeout)) => {
-                    log::info!("No events received in the last {} seconds, quitting ... ", global_timeout);
-                    std::process::exit(0);
-                    
-                 }
+                    if run_as_daemon {
+                        log::info!("No events received in the last {} seconds, restarting ... ", global_timeout);
+                    } else {
+                        log::info!("No events received in the last {} seconds, quitting ... ", global_timeout);
+                        std::process::exit(0);
+                    }
 
+                }
             }
-            
             // if self.should_quit {
             //     return Ok(());
             // }
@@ -267,7 +192,6 @@ impl App {
 
     async fn process_events(
         &mut self,
-       // es_host: Host,
         event: Message,
         event_tx: &mpsc::Sender<Message>,
         index_tx: &broadcast::Sender<Value>,
@@ -287,7 +211,6 @@ impl App {
                 );
                 let _payload = payload.clone();
                 let _index = index.to_string();
-                // let record = _payload["key"]["file"].to_owned();
                 let lastevent_handle = tokio::spawn(async move {
                     let _ = filter_record(_payload, _event_tx).await;
                 });
@@ -308,13 +231,13 @@ impl App {
 
             }
             // catchall for debugging
-            _ => {
-                log::debug!(
-                    "Other event",
+            // _ => {
+            //     log::debug!(
+            //         "Other event",
   
-                );
+            //     );
 
-            }
+            // }
         }
         Ok(())
     }
